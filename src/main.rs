@@ -11,6 +11,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use database::Database;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use jina::JinaEmbedder;
 use tree_sitter::{Node, Parser};
 
@@ -65,7 +66,31 @@ fn collect_entities(node: Node<'_>, source: &str, entities: &mut Vec<CodeEntity>
     }
 }
 
-fn find_go_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+fn load_ignore_rules(project_root: &Path) -> Result<Gitignore> {
+    let ignore_path = project_root.join(".slopmopignore");
+    let mut builder = GitignoreBuilder::new(project_root);
+
+    if ignore_path
+        .try_exists()
+        .with_context(|| format!("failed to inspect {}", ignore_path.display()))?
+        && let Some(error) = builder.add(&ignore_path)
+    {
+        return Err(error).with_context(|| format!("failed to parse {}", ignore_path.display()));
+    }
+
+    builder.build().with_context(|| {
+        format!(
+            "failed to build ignore rules from {}",
+            ignore_path.display()
+        )
+    })
+}
+
+fn find_go_files(
+    directory: &Path,
+    ignore_rules: &Gitignore,
+    files: &mut Vec<PathBuf>,
+) -> Result<()> {
     for entry in fs::read_dir(directory)
         .with_context(|| format!("failed to read directory {}", directory.display()))?
     {
@@ -73,10 +98,14 @@ fn find_go_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
         let path = entry.path();
         let file_type = entry.file_type()?;
 
+        if entry.file_name() == ".git"
+            || ignore_rules.matched(&path, file_type.is_dir()).is_ignore()
+        {
+            continue;
+        }
+
         if file_type.is_dir() {
-            if entry.file_name() != ".git" {
-                find_go_files(&path, files)?;
-            }
+            find_go_files(&path, ignore_rules, files)?;
         } else if file_type.is_file() && path.extension().is_some_and(|extension| extension == "go")
         {
             files.push(path);
@@ -93,8 +122,9 @@ fn relative_path(path: &Path, project_root: &Path) -> String {
 }
 
 fn parse_project(project_root: &Path) -> Result<Vec<PendingFile>> {
+    let ignore_rules = load_ignore_rules(project_root)?;
     let mut paths = Vec::new();
-    find_go_files(project_root, &mut paths)?;
+    find_go_files(project_root, &ignore_rules, &mut paths)?;
     paths.sort();
 
     let mut parser = Parser::new();
@@ -226,5 +256,68 @@ fn main() -> Result<()> {
         }
         Some(directory) => index_project(&project_root(directory)?),
         None => index_project(&project_root(".")?),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn missing_slopmopignore_is_allowed() -> Result<()> {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let root =
+            env::temp_dir().join(format!("slopmop-no-ignore-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&root)?;
+        fs::write(root.join("keep.go"), "package example\n")?;
+
+        let rules = load_ignore_rules(&root)?;
+        let mut files = Vec::new();
+        find_go_files(&root, &rules, &mut files)?;
+
+        assert_eq!(files, [root.join("keep.go")]);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn slopmopignore_excludes_matching_files_and_directories() -> Result<()> {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let root = env::temp_dir().join(format!("slopmop-ignore-{}-{unique}", std::process::id()));
+        fs::create_dir_all(root.join("generated"))?;
+        fs::create_dir_all(root.join("nested"))?;
+
+        fs::write(
+            root.join(".slopmopignore"),
+            "ignored.go\ngenerated/\n*_mock.go\n!important_mock.go\n/root_only.go\n",
+        )?;
+        for path in [
+            "keep.go",
+            "ignored.go",
+            "generated/code.go",
+            "nested/thing_mock.go",
+            "nested/important_mock.go",
+            "root_only.go",
+            "nested/root_only.go",
+        ] {
+            fs::write(root.join(path), "package example\n")?;
+        }
+
+        let rules = load_ignore_rules(&root)?;
+        let mut files = Vec::new();
+        find_go_files(&root, &rules, &mut files)?;
+        let mut relative = files
+            .iter()
+            .map(|path| relative_path(path, &root))
+            .collect::<Vec<_>>();
+        relative.sort();
+
+        assert_eq!(
+            relative,
+            ["keep.go", "nested/important_mock.go", "nested/root_only.go"]
+        );
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 }

@@ -35,6 +35,24 @@ cargo run --release -- path/to/go-project
 
 The index is created as `.slopmop` in the project root. Each run recursively finds `.go` files and atomically replaces the existing index. The first run downloads and caches `jinaai/jina-embeddings-v2-base-code` from Hugging Face.
 
+### Ignore files and directories
+
+Add a `.slopmopignore` file to the project root to exclude paths from indexing. It uses gitignore syntax, including comments, glob patterns, directory patterns, root-relative patterns, and `!` negation:
+
+```gitignore
+# Generated code
+internal/generated/
+*.generated.go
+
+# Ignore one file only at the project root
+/legacy.go
+
+# Re-include an otherwise ignored file
+!important.generated.go
+```
+
+Ignored directories are not traversed. As with `.gitignore`, a file inside an ignored directory cannot be re-included unless its parent directory is also re-included.
+
 ## Cluster similar nodes
 
 From an indexed project, list the 10 largest similarity clusters:
