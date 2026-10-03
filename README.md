@@ -53,6 +53,20 @@ internal/generated/
 
 Ignored directories are not traversed. As with `.gitignore`, a file inside an ignored directory cannot be re-included unless its parent directory is also re-included.
 
+## Configuration
+
+slopmop automatically reads `slopmop.toml` from the project directory. An alternate file can be supplied with `--config PATH`. Command-line options override values from the file:
+
+```toml
+# Used by `slopmop` / `slopmop index`
+project_directory = "/path/to/go-project"
+
+[cluster]
+threshold = 0.75
+```
+
+Configuration files are optional.
+
 ## Cluster similar nodes
 
 From an indexed project, list the 10 largest similarity clusters:
@@ -65,6 +79,8 @@ The default minimum cosine similarity is `0.8`. It can be changed explicitly, an
 
 ```sh
 slopmop cluster path/to/go-project --threshold 0.75
+# or use slopmop.toml:
+slopmop cluster path/to/go-project
 ```
 
 Nodes are connected when their cosine similarity meets the threshold. Transitive connected nodes belong to the same cluster.
