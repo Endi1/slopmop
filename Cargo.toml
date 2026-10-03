@@ -20,3 +20,7 @@ tracing = "0.1"
 ureq = "3.4"
 tree-sitter = "0.27.0"
 tree-sitter-go = "0.25.0"
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+candle-core = { version = "0.11.0", features = ["metal"] }
+candle-nn = { version = "0.11.0", features = ["metal"] }

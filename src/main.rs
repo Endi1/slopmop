@@ -121,7 +121,7 @@ fn cluster_command(arguments: &[String]) -> Result<()> {
         .or(config.project_directory.as_deref())
         .unwrap_or(".");
     let threshold = threshold.or(config.cluster.threshold).unwrap_or(0.8);
-    clustering::list_largest_clusters(&project_root(directory)?, threshold)
+    clustering::list_clusters(&project_root(directory)?, threshold)
 }
 
 fn index_command(arguments: &[String]) -> Result<()> {

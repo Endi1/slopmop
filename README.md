@@ -20,6 +20,8 @@ Build or install the executable:
 cargo install --path .
 ```
 
+On Apple Silicon Macs, embeddings automatically use the Metal GPU backend. If Metal cannot be initialized, slopmop reports the error and falls back to CPU. Other platforms use CPU. Building Metal support requires Apple's Xcode command-line tools and Metal toolchain.
+
 Then run it from a Go project:
 
 ```sh
@@ -75,7 +77,7 @@ Configuration files are optional. A language can be disabled to exclude its file
 
 ## Cluster similar nodes
 
-From an indexed project, list the 10 largest similarity clusters:
+From an indexed project, list all clusters ranked by average pairwise cosine similarity (highest first):
 
 ```sh
 slopmop cluster
@@ -89,7 +91,7 @@ slopmop cluster path/to/go-project --threshold 0.75
 slopmop cluster path/to/go-project
 ```
 
-Nodes are connected when their cosine similarity meets the threshold. Transitive connected nodes belong to the same cluster.
+Nodes are connected when their cosine similarity meets the threshold. Transitive connected nodes belong to the same cluster. Ranking averages all distinct pairs within each cluster, including pairs below the threshold. Each cluster's score is printed; single-node clusters are excluded.
 
 The database contains two tables:
 

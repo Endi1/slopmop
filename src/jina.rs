@@ -14,6 +14,20 @@ pub struct JinaEmbedder {
     tokenizer: Tokenizer,
 }
 
+fn embedding_device() -> Device {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    match Device::new_metal(0) {
+        Ok(device) => {
+            eprintln!("Using Metal GPU for embeddings.");
+            return device;
+        }
+        Err(error) => eprintln!("Metal unavailable ({error}); falling back to CPU."),
+    }
+
+    eprintln!("Using CPU for embeddings.");
+    Device::Cpu
+}
+
 impl JinaEmbedder {
     pub fn load() -> Result<Self> {
         let repo = HFClientSync::new()?.model(MODEL_OWNER, MODEL_ID);
@@ -51,7 +65,7 @@ impl JinaEmbedder {
             0,
             PositionEmbeddingType::Alibi,
         );
-        let device = Device::Cpu;
+        let device = embedding_device();
         let weights =
             unsafe { VarBuilder::from_mmaped_safetensors(&[model_path], DType::F32, &device)? };
         let model = BertModel::new(weights, &config)?;

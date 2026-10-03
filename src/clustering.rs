@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 
 use crate::{database::Database, sqlite_vector};
 
-pub fn list_largest_clusters(project_root: &Path, minimum_similarity: f32) -> Result<()> {
+pub fn list_clusters(project_root: &Path, minimum_similarity: f32) -> Result<()> {
     ensure!(
         (-1.0..=1.0).contains(&minimum_similarity),
         "similarity threshold must be between -1 and 1"
@@ -49,21 +49,33 @@ pub fn list_largest_clusters(project_root: &Path, minimum_similarity: f32) -> Re
     for index in 0..embeddings.len() {
         clusters.entry(groups.find(index)).or_default().push(index);
     }
-    let mut clusters = clusters.into_values().collect::<Vec<_>>();
-    clusters.sort_by(|left, right| {
-        right
-            .len()
-            .cmp(&left.len())
-            .then_with(|| left[0].cmp(&right[0]))
-    });
+    let mut clusters = clusters
+        .into_values()
+        .filter(|members| members.len() > 1)
+        .map(|members| {
+            let score = average_similarity(
+                members
+                    .iter()
+                    .map(|&index| embeddings[index].embedding.as_slice()),
+            );
+            (members, score)
+        })
+        .collect::<Vec<_>>();
+    rank_clusters(&mut clusters);
 
     println!(
-        "{} clusters at cosine similarity >= {:.3}; showing the 10 largest\n",
+        "{} clusters at cosine similarity >= {:.3}; ranked by average pairwise similarity\n",
         clusters.len(),
         minimum_similarity
     );
-    for (rank, cluster) in clusters.iter().take(10).enumerate() {
-        println!("Cluster {} ({} nodes)", rank + 1, cluster.len());
+    for (rank, (cluster, score)) in clusters.iter().enumerate() {
+        let similarity = score.map_or_else(|| "N/A".to_owned(), |score| format!("{score:.3}"));
+        println!(
+            "Cluster {} ({} nodes, average similarity: {})",
+            rank + 1,
+            cluster.len(),
+            similarity
+        );
         for &index in cluster {
             let item = &embeddings[index];
             println!("  {}:{}", item.filepath, item.node_name);
@@ -72,6 +84,89 @@ pub fn list_largest_clusters(project_root: &Path, minimum_similarity: f32) -> Re
     }
 
     Ok(())
+}
+
+// For unit vectors, sum of all distinct pairwise dot products is
+// (||sum(v)||² - n) / 2. This avoids a quadratic pairwise scoring pass.
+fn average_similarity<'a>(embeddings: impl Iterator<Item = &'a [u8]>) -> Option<f64> {
+    let mut sum = Vec::<f64>::new();
+    let mut count = 0;
+    for bytes in embeddings {
+        let vector = bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()) as f64)
+            .collect::<Vec<_>>();
+        let norm = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+        if norm == 0.0 || !norm.is_finite() {
+            return None;
+        }
+        if count == 0 {
+            sum.resize(vector.len(), 0.0);
+        }
+        for (total, value) in sum.iter_mut().zip(vector) {
+            *total += value / norm;
+        }
+        count += 1;
+    }
+    if count < 2 {
+        return None;
+    }
+    let n = count as f64;
+    Some(
+        ((sum.iter().map(|value| value * value).sum::<f64>() - n) / (n * (n - 1.0)))
+            .clamp(-1.0, 1.0),
+    )
+}
+
+fn rank_clusters(clusters: &mut [(Vec<usize>, Option<f64>)]) {
+    clusters.sort_by(|(left, left_score), (right, right_score)| {
+        match (left_score, right_score) {
+            (Some(left), Some(right)) => right.total_cmp(left),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+        .then_with(|| left[0].cmp(&right[0]))
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn score(vectors: &[[f32; 2]]) -> Option<f64> {
+        let blobs = vectors
+            .iter()
+            .map(|vector| {
+                vector
+                    .iter()
+                    .flat_map(|value| value.to_ne_bytes())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        average_similarity(blobs.iter().map(Vec::as_slice))
+    }
+
+    #[test]
+    fn scores_all_distinct_pairs() {
+        assert_eq!(score(&[[1.0, 0.0]]), None);
+        assert_eq!(score(&[[1.0, 0.0], [2.0, 0.0]]), Some(1.0));
+        assert_eq!(score(&[[1.0, 0.0], [0.0, 1.0]]), Some(0.0));
+        assert_eq!(score(&[[1.0, 0.0], [-1.0, 0.0]]), Some(-1.0));
+        let average = score(&[[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]).unwrap();
+        assert!((average + 1.0 / 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn ranks_by_similarity_not_size_and_keeps_all_clusters() {
+        let mut clusters = vec![(vec![0, 1, 2], Some(0.8)), (vec![3, 4], Some(0.95))];
+        clusters.extend((5..20).map(|index| (vec![index], None)));
+        rank_clusters(&mut clusters);
+        assert_eq!(clusters.len(), 17);
+        assert_eq!(clusters[0].0, [3, 4]);
+        assert_eq!(clusters[1].0, [0, 1, 2]);
+        assert_eq!(clusters[2].0, [5]);
+    }
 }
 
 struct UnionFind {
