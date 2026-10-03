@@ -10,7 +10,6 @@ use serde::Deserialize;
 #[serde(default)]
 pub struct Config {
     pub project_directory: Option<String>,
-    pub threshold: Option<f32>,
     pub cluster: ClusterConfig,
 }
 
@@ -18,12 +17,6 @@ pub struct Config {
 #[serde(default)]
 pub struct ClusterConfig {
     pub threshold: Option<f32>,
-}
-
-impl Config {
-    pub fn threshold(&self) -> Option<f32> {
-        self.cluster.threshold.or(self.threshold)
-    }
 }
 
 pub fn load(path: &Path) -> Result<Config> {

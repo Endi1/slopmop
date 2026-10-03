@@ -65,7 +65,7 @@ project_directory = "/path/to/go-project"
 threshold = 0.75
 ```
 
-The cluster threshold may also be written as a top-level `threshold` key. Configuration files are optional.
+Configuration files are optional.
 
 ## Cluster similar nodes
 
