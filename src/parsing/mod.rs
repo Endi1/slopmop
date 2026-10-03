@@ -91,7 +91,11 @@ pub(crate) fn parse_project(
             let source = fs::read_to_string(&path)
                 .with_context(|| format!("failed to read {}", path.display()))?;
             let entities = match language {
-                Language::Go => go::parse(&mut go_parser, &source)?,
+                Language::Go => go::parse(
+                    &mut go_parser,
+                    &source,
+                    config.languages.get(language_name(&language)),
+                )?,
             };
 
             Ok(PendingFile {

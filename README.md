@@ -67,9 +67,11 @@ threshold = 0.75
 # Language-specific settings. Languages are enabled by default.
 [languages.go]
 enabled = true
+# Supported constructs: struct, interface, func, and method.
+exclude = ["struct", "func"]
 ```
 
-Configuration files are optional. A language can be disabled to exclude its files from indexing, for example with `[languages.go] enabled = false`.
+Configuration files are optional. A language can be disabled to exclude its files from indexing, for example with `[languages.go] enabled = false`. Language-specific constructs can also be excluded from indexing and clustering with `exclude`; for Go, supported values are `struct`, `interface`, `func`, and `method`.
 
 ## Cluster similar nodes
 

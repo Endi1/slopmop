@@ -25,11 +25,16 @@ pub struct ClusterConfig {
 #[serde(default)]
 pub struct LanguageConfig {
     pub enabled: bool,
+    #[serde(alias = "excluded_constructs", alias = "exclude_constructs")]
+    pub exclude: Vec<String>,
 }
 
 impl Default for LanguageConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            exclude: Vec::new(),
+        }
     }
 }
 
@@ -60,10 +65,12 @@ mod tests {
 
     #[test]
     fn loads_language_level_settings() -> Result<()> {
-        let config: Config =
-            toml::from_str("[languages.go]\nenabled = false\n[languages.rust]\nenabled = true\n")?;
+        let config: Config = toml::from_str(
+            "[languages.go]\nenabled = false\nexclude = [\"struct\", \"func\"]\n[languages.rust]\nenabled = true\n",
+        )?;
 
         assert!(!config.languages["go"].enabled);
+        assert_eq!(config.languages["go"].exclude, ["struct", "func"]);
         assert!(config.languages["rust"].enabled);
         Ok(())
     }
