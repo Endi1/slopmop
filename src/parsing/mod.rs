@@ -52,17 +52,36 @@ fn language_for_path(path: &Path) -> Option<Language> {
     }
 }
 
-fn select_source_files(paths: Vec<PathBuf>) -> Vec<(PathBuf, Language)> {
+fn language_name(language: &Language) -> &'static str {
+    match language {
+        Language::Go => "go",
+    }
+}
+
+fn select_source_files(
+    paths: Vec<PathBuf>,
+    config: &crate::config::Config,
+) -> Vec<(PathBuf, Language)> {
     paths
         .into_iter()
-        .filter_map(|path| language_for_path(&path).map(|language| (path, language)))
+        .filter_map(|path| {
+            let language = language_for_path(&path)?;
+            let enabled = config
+                .languages
+                .get(language_name(&language))
+                .is_none_or(|config| config.enabled);
+            enabled.then_some((path, language))
+        })
         .collect()
 }
 
-pub(crate) fn parse_project(project_root: &Path) -> Result<Vec<PendingFile>> {
+pub(crate) fn parse_project(
+    project_root: &Path,
+    config: &crate::config::Config,
+) -> Result<Vec<PendingFile>> {
     let ignore_rules = load_ignore_rules(project_root)?;
     let discovered_files = filesystem::discover_files(project_root, &ignore_rules)?;
-    let mut source_files = select_source_files(discovered_files);
+    let mut source_files = select_source_files(discovered_files, config);
     source_files.sort_by(|(left, _), (right, _)| left.cmp(right));
 
     let mut go_parser = go::parser()?;
@@ -105,7 +124,7 @@ mod tests {
         ];
 
         assert_eq!(
-            select_source_files(paths),
+            select_source_files(paths, &crate::config::Config::default()),
             [(PathBuf::from("main.go"), Language::Go)]
         );
     }
@@ -115,7 +134,7 @@ mod tests {
         let root = temporary_root("no-ignore")?;
         fs::write(root.join("keep.go"), "package example\n")?;
 
-        let files = parse_project(&root)?;
+        let files = parse_project(&root, &crate::config::Config::default())?;
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].filepath, "keep.go");
@@ -145,7 +164,7 @@ mod tests {
             fs::write(root.join(path), "package example\n")?;
         }
 
-        let files = parse_project(&root)?;
+        let files = parse_project(&root, &crate::config::Config::default())?;
         let relative = files
             .iter()
             .map(|file| file.filepath.as_str())

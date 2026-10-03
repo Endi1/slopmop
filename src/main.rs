@@ -34,9 +34,9 @@ fn project_root(directory: &str) -> Result<PathBuf> {
     Ok(root)
 }
 
-fn index_project(project_root: &Path) -> Result<()> {
+fn index_project(project_root: &Path, config: &config::Config) -> Result<()> {
     let extension_path = sqlite_vector::extension_path()?;
-    let pending_files = parsing::parse_project(project_root)?;
+    let pending_files = parsing::parse_project(project_root, config)?;
     let entity_count = pending_files
         .iter()
         .map(|file| file.entities.len())
@@ -134,7 +134,7 @@ fn index_command(arguments: &[String]) -> Result<()> {
     let directory = directory
         .or(config.project_directory.as_deref())
         .unwrap_or(".");
-    index_project(&project_root(directory)?)
+    index_project(&project_root(directory)?, &config)
 }
 
 fn print_usage() {
