@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -11,12 +12,25 @@ use serde::Deserialize;
 pub struct Config {
     pub project_directory: Option<String>,
     pub cluster: ClusterConfig,
+    pub languages: HashMap<String, LanguageConfig>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct ClusterConfig {
     pub threshold: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct LanguageConfig {
+    pub enabled: bool,
+}
+
+impl Default for LanguageConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 pub fn load(path: &Path) -> Result<Config> {
@@ -37,6 +51,21 @@ pub fn discover(directory: &Path, explicit_path: Option<&Path>) -> Result<Config
                 Ok(Config::default())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loads_language_level_settings() -> Result<()> {
+        let config: Config =
+            toml::from_str("[languages.go]\nenabled = false\n[languages.rust]\nenabled = true\n")?;
+
+        assert!(!config.languages["go"].enabled);
+        assert!(config.languages["rust"].enabled);
+        Ok(())
     }
 }
 

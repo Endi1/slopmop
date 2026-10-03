@@ -63,9 +63,13 @@ project_directory = "/path/to/go-project"
 
 [cluster]
 threshold = 0.75
+
+# Language-specific settings. Languages are enabled by default.
+[languages.go]
+enabled = true
 ```
 
-Configuration files are optional.
+Configuration files are optional. A language can be disabled to exclude its files from indexing, for example with `[languages.go] enabled = false`.
 
 ## Cluster similar nodes
 
