@@ -1,4 +1,5 @@
 mod clustering;
+mod config;
 mod database;
 mod jina;
 mod jina_model;
@@ -81,37 +82,64 @@ fn index_project(project_root: &Path) -> Result<()> {
 }
 
 fn cluster_command(arguments: &[String]) -> Result<()> {
-    let mut directory = ".";
-    let mut threshold = 0.8_f32;
+    let (arguments, config_path) = config::config_path(arguments)?;
+    let mut directory = None;
+    let mut threshold = None;
     let mut index = 0;
 
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--threshold" => {
                 index += 1;
-                threshold = arguments
-                    .get(index)
-                    .context("--threshold requires a value")?
-                    .parse()
-                    .context("invalid cosine similarity threshold")?;
+                threshold = Some(
+                    arguments
+                        .get(index)
+                        .context("--threshold requires a value")?
+                        .parse()
+                        .context("invalid cosine similarity threshold")?,
+                );
             }
             argument if argument.starts_with("--threshold=") => {
-                threshold = argument["--threshold=".len()..]
-                    .parse()
-                    .context("invalid cosine similarity threshold")?;
+                threshold = Some(
+                    argument["--threshold=".len()..]
+                        .parse()
+                        .context("invalid cosine similarity threshold")?,
+                );
             }
             argument if argument.starts_with('-') => bail!("unknown option: {argument}"),
-            argument => directory = argument,
+            argument => directory = Some(argument),
         }
         index += 1;
     }
 
+    let supplied_directory = directory;
+    let config = config::discover(
+        Path::new(supplied_directory.unwrap_or(".")),
+        config_path.as_deref(),
+    )?;
+    let directory = supplied_directory
+        .or(config.project_directory.as_deref())
+        .unwrap_or(".");
+    let threshold = threshold.or(config.threshold()).unwrap_or(0.8);
     clustering::list_largest_clusters(&project_root(directory)?, threshold)
+}
+
+fn index_command(arguments: &[String]) -> Result<()> {
+    let (arguments, config_path) = config::config_path(arguments)?;
+    let directory = arguments.first().map(String::as_str);
+    if arguments.len() > 1 {
+        bail!("only one project directory may be supplied");
+    }
+    let config = config::discover(Path::new(directory.unwrap_or(".")), config_path.as_deref())?;
+    let directory = directory
+        .or(config.project_directory.as_deref())
+        .unwrap_or(".");
+    index_project(&project_root(directory)?)
 }
 
 fn print_usage() {
     println!(
-        "Usage:\n  slopmop index [PROJECT_DIRECTORY]\n  slopmop cluster [PROJECT_DIRECTORY] [--threshold 0.8]"
+        "Usage:\n  slopmop index [PROJECT_DIRECTORY] [--config PATH]\n  slopmop cluster [PROJECT_DIRECTORY] [--threshold 0.8] [--config PATH]\n\nConfig: slopmop.toml (automatically discovered in the project directory)"
     );
 }
 
@@ -119,15 +147,11 @@ fn main() -> Result<()> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     match arguments.first().map(String::as_str) {
         Some("cluster") => cluster_command(&arguments[1..]),
-        Some("index") => {
-            let directory = arguments.get(1).map_or(".", String::as_str);
-            index_project(&project_root(directory)?)
-        }
+        Some("index") => index_command(&arguments[1..]),
         Some("--help" | "-h") => {
             print_usage();
             Ok(())
         }
-        Some(directory) => index_project(&project_root(directory)?),
-        None => index_project(&project_root(".")?),
+        Some(_) | None => index_command(&arguments),
     }
 }
